@@ -16,26 +16,11 @@ def generate_flags(row):
     return ",".join(flags)
 
 
-def row_to_event(row):
-
-    return {
-
-        "hour":
-            row["hour"],
-
-        "is_weekend":
-            row["is_weekend"],
-
-        "action":
-            row["action"],
-
-        "resource_sensitivity":
-            row["resource_sensitivity"],
-
-    }
-
-def load_rules(path):
-
-    with open(path, "r") as f:
-
-        return json.load(f)["rules"]
+ 
+def load_rules(path: str) -> tuple[list, list]:
+    """
+    Load rules.json and return (rules_list, global_exceptions_list).
+    """
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    return data["rules"], data.get("global_exceptions", [])

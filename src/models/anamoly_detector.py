@@ -31,11 +31,11 @@ def detect_anomalies(df, features):
     df["anomaly_score"] = model.score(X)
 
     df = calculate_risk(df)
-
+    """
     df["flags"] = df.apply(
         generate_flags,
         axis=1)
-
+    """
     top_users = df.sort_values(by="risk_score", ascending=False).head(20)
 
     # Display the relevant columns

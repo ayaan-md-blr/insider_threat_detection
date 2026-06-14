@@ -1,19 +1,264 @@
 {
+  "version": "2.1",
+  "description": "Rule-Based Alerting Engine — rules matched to data_access_logs.csv + user_profiles.csv schema",
+  "field_reference": {
+    "log_fields": ["timestamp", "user_id", "username", "action", "resource", "resource_sensitivity", "status", "source_ip", "time_classification"],
+    "profile_fields": ["user_id", "username", "email", "department", "job_title", "privilege_level", "systems_access", "last_login", "days_inactive", "is_active", "hire_date"],
+    "computed_fields": ["access_hour", "is_weekend", "day_of_week", "day_name", "first_time_access"]
+  },
+
   "rules": [
+
     {
       "rule_id": "R001",
       "name": "After Hours Restricted Access",
-      "condition": "(hour < 8 or hour > 18) and resource_sensitivity == 'high'",
+      "description": "Access to high-sensitivity resources outside business hours.",
       "severity": "high",
-      "actions": ["alert"]
+      "condition": "(time_classification in ['night', 'unusual_hours', 'weekend']) and resource_sensitivity == 'high'",
+      "fields_used": ["time_classification", "resource_sensitivity"],
+      "exceptions": [
+        {
+          "department": "IT",
+          "reason": "IT staff may work outside business hours for maintenance"
+        },
+        {
+          "privilege_level": "admin",
+          "reason": "Admins may need off-hours access for critical operations"
+        },
+        {
+          "department": "Security",
+          "reason": "Security team monitors systems 24/7"
+        }
+      ],
+      "actions": ["alert"],
+      "risk_score": 60
     },
 
     {
       "rule_id": "R002",
-      "name": "Bulk Export",
-      "condition": "action == 'export_data' and resource == 'PROD_DB'",
+      "name": "Bulk Export on High-Sensitivity Resource",
+      "description": "Any export_data action targeting a high-sensitivity resource is a data exfiltration risk.",
       "severity": "high",
-      "actions": ["alert"]
+      "condition": "action == 'export_data' and resource_sensitivity == 'high'",
+      "fields_used": ["action", "resource_sensitivity"],
+      "exceptions": [
+        {
+          "department": "Finance",
+          "resource": "GL_System",
+          "reason": "Finance exports GL data as part of regular reporting"
+        },
+        {
+          "department": "Finance",
+          "resource": "GL_System",
+          "day_name": "Friday",
+          "reason": "Finance performs end-of-week GL exports every Friday"
+        },
+        {
+          "privilege_level": "admin",
+          "reason": "Admins may perform authorized data exports"
+        }
+      ],
+      "actions": ["alert"],
+      "risk_score": 70
+    },
+
+    {
+      "rule_id": "R003",
+      "name": "Admin Operation by Non-Privileged User",
+      "description": "A user with privilege_level 'user' performing admin_operation is a serious anomaly.",
+      "severity": "critical",
+      "condition": "action == 'admin_operation' and privilege_level == 'user'",
+      "fields_used": ["action", "privilege_level"],
+      "join": "user_profiles on user_id",
+      "exceptions": [],
+      "actions": ["alert"],
+      "risk_score": 85
+    },
+
+    {
+      "rule_id": "R004",
+      "name": "Service Account Performing Interactive Action",
+      "description": "Service accounts should never login, export data, or access files interactively.",
+      "severity": "high",
+      "condition": "privilege_level == 'service-account' and action in ['login', 'file_access', 'export_data']",
+      "fields_used": ["privilege_level", "action"],
+      "join": "user_profiles on user_id",
+      "exceptions": [],
+      "actions": ["alert"],
+      "risk_score": 75
+    },
+
+    {
+      "rule_id": "R005",
+      "name": "Access to Out-of-Scope System",
+      "description": "User accesses a resource that does not map to any system in their systems_access list.",
+      "severity": "medium",
+      "condition": "resource_system_key not in systems_access",
+      "fields_used": ["resource", "systems_access"],
+      "join": "user_profiles on user_id",
+      "resource_to_system_map": {
+        "PROD_DB": "PROD_DB",
+        "Admin_Console": "ADMIN_SYS",
+        "SIEM": "SIEM",
+        "HRIS": "AD",
+        "Customer_Vault": "Salesforce",
+        "Data_Lake": "AWS_IAM",
+        "GL_System": "PROD_DB",
+        "BI_Tool": "Azure_AD",
+        "Email_Archive": "EMAIL",
+        "File_Share": "AD"
+      },
+      "exceptions": [
+        {
+          "privilege_level": "admin",
+          "reason": "Admins have broad system access by default"
+        }
+      ],
+      "actions": ["alert"],
+      "risk_score": 55
+    },
+
+    {
+      "rule_id": "R006",
+      "name": "Failed Action on High-Sensitivity Resource",
+      "description": "A failed access attempt on a high-sensitivity resource may indicate probing or unauthorized access attempts.",
+      "severity": "medium",
+      "condition": "status == 'failure' and resource_sensitivity == 'high'",
+      "fields_used": ["status", "resource_sensitivity"],
+      "exceptions": [],
+      "actions": ["alert"],
+      "risk_score": 50
+    },
+
+    {
+      "rule_id": "R007",
+      "name": "Admin Console Access by Non-Admin",
+      "description": "Admin_Console is a high-sensitivity resource. Access by non-admin, non-power-user roles should be flagged.",
+      "severity": "high",
+      "condition": "resource == 'Admin_Console' and privilege_level not in ['admin', 'power-user']",
+      "fields_used": ["resource", "privilege_level"],
+      "join": "user_profiles on user_id",
+      "exceptions": [
+        {
+          "department": "IT",
+          "reason": "IT staff may access Admin_Console for routine support tasks"
+        }
+      ],
+      "actions": ["alert"],
+      "risk_score": 70
+    },
+
+    {
+      "rule_id": "R008",
+      "name": "SIEM Access by Non-Security Department",
+      "description": "SIEM is a security monitoring tool. Access by non-Security, non-IT, non-Compliance departments is anomalous.",
+      "severity": "medium",
+      "condition": "resource == 'SIEM' and department not in ['Security', 'IT', 'Compliance']",
+      "fields_used": ["resource", "department"],
+      "join": "user_profiles on user_id",
+      "exceptions": [
+        {
+          "privilege_level": "admin",
+          "reason": "Admins may access SIEM for cross-functional monitoring"
+        }
+      ],
+      "actions": ["alert"],
+      "risk_score": 50
+    },
+
+    {
+      "rule_id": "R009",
+      "name": "PROD_DB Access by Non-Technical Department",
+      "description": "Direct PROD_DB access by Marketing, HR, Legal, or Sales is out of scope and potentially dangerous.",
+      "severity": "high",
+      "condition": "resource == 'PROD_DB' and department in ['Marketing', 'HR', 'Legal', 'Sales', 'Support']",
+      "fields_used": ["resource", "department"],
+      "join": "user_profiles on user_id",
+      "exceptions": [
+        {
+          "privilege_level": "admin",
+          "reason": "Admins in any department may need PROD_DB access"
+        }
+      ],
+      "actions": ["alert"],
+      "risk_score": 65
+    },
+
+    {
+      "rule_id": "R010",
+      "name": "HRIS Access by Non-HR Department",
+      "description": "HRIS contains sensitive employee PII. Access by non-HR, non-Executive, non-Compliance departments should be reviewed.",
+      "severity": "medium",
+      "condition": "resource == 'HRIS' and department not in ['HR', 'Executive', 'Compliance', 'IT']",
+      "fields_used": ["resource", "department"],
+      "join": "user_profiles on user_id",
+      "exceptions": [
+        {
+          "privilege_level": "admin",
+          "reason": "Admins may access HRIS for provisioning tasks"
+        }
+      ],
+      "actions": ["alert"],
+      "risk_score": 55
+    },
+
+    {
+      "rule_id": "R011",
+      "name": "High-Sensitivity Access During Weekend",
+      "description": "Any access to a high-sensitivity resource on weekends warrants review.",
+      "severity": "medium",
+      "condition": "time_classification == 'weekend' and resource_sensitivity == 'high'",
+      "fields_used": ["time_classification", "resource_sensitivity"],
+      "exceptions": [
+        {
+          "department": "Security",
+          "reason": "Security team monitors systems 24/7 including weekends"
+        },
+        {
+          "department": "IT",
+          "reason": "IT may perform weekend maintenance on sensitive systems"
+        },
+        {
+          "privilege_level": "admin",
+          "reason": "Admins may handle critical weekend operations"
+        }
+      ],
+      "actions": ["alert"],
+      "risk_score": 45
+    },
+
+    {
+      "rule_id": "R012",
+      "name": "Export on Customer Vault by Non-Sales/Non-Marketing",
+      "description": "Customer_Vault holds customer PII. Exporting from it outside Sales/Marketing/Executive is suspicious.",
+      "severity": "high",
+      "condition": "action == 'export_data' and resource == 'Customer_Vault' and department not in ['Sales', 'Marketing', 'Executive']",
+      "fields_used": ["action", "resource", "department"],
+      "join": "user_profiles on user_id",
+      "exceptions": [
+        {
+          "privilege_level": "admin",
+          "reason": "Admins may export for approved data migrations"
+        }
+      ],
+      "actions": ["alert"],
+      "risk_score": 75
     }
-  ]
+
+  ],
+
+  "global_exceptions": [
+    {
+      "condition": "is_active == false",
+      "override_severity": "critical",
+      "reason": "Any access by an inactive account escalates all matched rules to critical"
+    }
+  ],
+
+  "severity_risk_score_guide": {
+    "critical": 90,
+    "high": 60,
+    "medium": 30,
+    "low": 10
+  }
 }
