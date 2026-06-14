@@ -1,0 +1,19 @@
+{
+  "rules": [
+    {
+      "rule_id": "R001",
+      "name": "After Hours Restricted Access",
+      "condition": "(access_hour < 8 or access_hour > 18) and resource_sensitivity == 'high'",
+      "severity": "high",
+      "actions": ["alert"]
+    },
+
+    {
+      "rule_id": "R002",
+      "name": "Bulk Export",
+      "condition": "action == 'export_data' and resource == 'PROD_DB'",
+      "severity": "high",
+      "actions": ["alert"]
+    }
+  ]
+}
