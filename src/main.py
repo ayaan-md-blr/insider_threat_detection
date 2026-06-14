@@ -1,123 +1,31 @@
 import pandas as pd
-from risk_engine import get_risk_level
+from ingestion.load_data import load_data
+from features.feature_engineering import *
+from models.anamoly_detector import *
+from rules.rule_engine import fire_rules
 
-from loader import (
-    load_rules,
-    load_access_logs,
-    load_user_profiles
-)
+df = load_data(
+    log_path=r"data/data_access_logs.csv",
+    profile_path=r"data/user_profiles.csv")
 
-from rule_engine import evaluate_event
-from enrich import (
-    enrich_time_features,
-    enrich_first_time_access,
-    row_to_event
-)
+df = build_features(df)
+#print(list(df.columns))
+#print(df[["hour", "is_weekend", "sensitivity_score", "action_score", "failed", "priv_score"]].head())
+features = [
+    "hour", 
+    "action_score", 
+    "sensitivity_score", 
+    "failed", 
+    "is_weekend", 
+    "priv_score"
+]
+
+anamoly_df = detect_anomalies(df, features)
+
+rules_df = fire_rules(anamoly_df)
 
 
 
 
-rules = load_rules(
-    r"rules/rules.json"
-)
 
-rule_lookup = {
-    rule["rule_id"]: rule["name"]
-    for rule in rules
-}
 
-"""
-event = {
-
-    "access_hour": 2,
-
-    "data_sensitivity": "restricted",
-
-    "rowcount": 50000,
-
-    "destination": "external_email",
-
-    "is_weekend": True,
-
-    "first_time_access": True
-}
-
-result = evaluate_event(
-    event,
-    rules
-)
-
-print(result)
-"""
-
-logs_df = load_access_logs(
-    r"data/data_access_logs.csv"
-)
-
-users_df = load_user_profiles(
-    r"data/user_profiles.csv"
-)
-
-print(logs_df.columns.tolist())
-print(users_df.columns.tolist())
-
-df = logs_df.merge(
-    users_df,
-    on="user_id",
-    how="left"
-)
-
-print(df.shape)
-
-print(df.head())
-
-df = enrich_time_features(df)
-
-df = enrich_first_time_access(df)
-
-alerts = []
-
-for _, row in df.iterrows():
-
-    event = row_to_event(row)
-
-    #print(">>>>>>>>>>>>>>>>", event)
-
-    result = evaluate_event(
-        event,
-        rules
-    )
-
-    if result["matched_rules"]:
-
-        alerts.append({
-
-            "user_id":
-                row["user_id"],
-
-            "timestamp":
-                row["timestamp"],
-
-            "matched_rules":
-                ",".join(
-                    result["matched_rules"]
-                ),
-
-            "rule_names":
-            [
-                rule_lookup[r]
-                for r in result["matched_rules"]
-            ],
-
-            "risk_score":
-                result["risk_score"],
-
-            "risk_level": get_risk_level(result["risk_score"])
-        })
-
-alerts_df = pd.DataFrame(alerts)
-print(alerts_df.head())
-alerts_df.to_csv(
-    "output/alerts.csv",
-    index=False
-)

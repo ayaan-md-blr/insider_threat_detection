@@ -3,7 +3,7 @@
     {
       "rule_id": "R001",
       "name": "After Hours Restricted Access",
-      "condition": "(access_hour < 8 or access_hour > 18) and resource_sensitivity == 'high'",
+      "condition": "(hour < 8 or hour > 18) and resource_sensitivity == 'high'",
       "severity": "high",
       "actions": ["alert"]
     },
